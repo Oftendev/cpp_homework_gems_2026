@@ -64,6 +64,7 @@ public:
         }
         // Удаляем возможные начальные группы
         deleteMatchesAndDropCycle();
+        currentState = GameState::WaitingForInput; // Задаём нач. состояние
     }
 
     // Отрисовка поля
@@ -111,6 +112,9 @@ public:
     }
 
     void handleClick(int posX, int posY) {
+        // Блокируем действия, если состояние не waitingForInput
+        if (currentState != GameState::WaitingForInput) return;
+
         // Делим нацело для определения нажатой клетки
         int x = posX / cellSize;
         int y = posY / cellSize;
@@ -140,15 +144,124 @@ public:
         }
     }
 
+    // Функция, которая будет вызываться каждый кадр и по прохождении DELAY будет двигать игру от состояния к состоянию
+    // Т.е. мы успеем увидеть эти состояния
+    void update() {
+        // Игрок ещё не походил - ничего не обновляем
+        if (currentState == GameState::WaitingForInput) return;
+
+        // Время таймера ещё не >= DELAY, выходим
+        if (stateClock.getElapsedTime() < DELAY) return;
+
+        // Игрок уже походил, получив комбинацию и время таймера прошло
+        switch (currentState) {
+            case GameState::ShowingMatches: {
+                // 1) Сохраняем инфу об удалённых клетках для PlacingBonuses и чистим поле
+                deletedCellsInfo.clear();
+                for (sf::Vector2i v: currentMatches) {
+                    deletedCellsInfo.push_back({v, board[v.y][v.x].color});
+                    board[v.y][v.x].type = CellType::Empty; // Очищаем клетку                    
+                }
+
+                // Переходим к следующему состоянию - FirstFalling
+                currentState = GameState::FirstFalling;
+                // Перезапускаем таймер
+                stateClock.restart();
+                break;
+            }
+            case GameState::FirstFalling: {
+                // 2) Клетки "упали" и насыпались новые сверху
+                fallAndAdd();
+
+                // Переходим к состоянию генерации бонусов
+                currentState = GameState::PlacingBonuses;
+                stateClock.restart();
+                break;   
+            }
+            case GameState::PlacingBonuses: {
+                // 3) Расставляем на упавшем поле бонусы
+                bonusesToActivate.clear();
+                for (const auto& [position, color] :deletedCellsInfo) {
+                    placeBonus(position, color, bonusesToActivate);
+                }
+                // Обнуляем индекс для следущего состояния, которое будет по нему ходить
+                currentBonusIndex = 0;
+                
+                // Переходим к состоянию активации бонусов
+                currentState = GameState::ActivatingBonuses;
+                stateClock.restart();
+                break;
+            }
+            case GameState::ActivatingBonuses: {
+                // 4) Активируем бонусы по одному с паузой
+                if (currentBonusIndex < bonusesToActivate.size()) {
+                    // Активируем один конкретный бонус (по факту - код, который был в activateBonuses, но без цикла, т.к. update уже происходит в цикле отрисовки)
+                    auto [pos, bonus] = bonusesToActivate[currentBonusIndex];
+                    if (bonus.type == CellType::ColorBonus) {
+                        executeColorBonus(pos, bonus.color);
+                    } else if (bonus.type == CellType::DestroyBonus) {
+                        executeBombBonus(pos);
+                    }
+                    currentBonusIndex++; // Переходим к следуюшему бонусу
+                    stateClock.restart(); // Перезапускаем таймер для слежующего бонуса
+                } else {
+                    // Все бонусы из списка активированы -> переходим ко второму падению
+                    currentState = GameState::SecondFalling;
+                    stateClock.restart();
+                }
+                break;                
+            }
+            case GameState::SecondFalling: {
+                // 5) Второе падение (после бонусов)
+                fallAndAdd();
+                
+                // ОТсюда можно выйти либо к состоянию ShowingMatches (если группы ещё есть), либо к WaitingForInput (если всё ок и можно делать следующий ход)
+                currentMatches = findGroupCells();
+                if (!currentMatches.empty()) {
+                    // Нашли новые клетки в группах - запускаем цикл заново
+                    currentState = GameState::ShowingMatches;
+                } else {
+                    // Если новы групп нет - даём ход игроку
+                    currentState = GameState::WaitingForInput;
+                }
+                stateClock.restart();
+                break;
+            }
+            default: break;
+        }
+    }
+
 private:
+    enum class GameState {
+        WaitingForInput, // Игрок может сделать ход
+        ShowingMatches, // Нашли группы, показываем их, как уделённые ячейки (серые)
+        FirstFalling, // Клетки после первого падения
+        PlacingBonuses,  // Показываем поле с расставленными бонусами
+        ActivatingBonuses,  // Активируем бонусы (по одному)
+        SecondFalling   // Клетки после второго падения (все бонусы уже активировались)
+    };
     int width, height; // Количество клеток по горизонтали и вертикали
     int cellSize;
-    std::vector<std::vector<Cell>> board;
-    bool firstIsSwapped;
-    sf::Vector2i firstSwapped; // или selected
+    std::vector<std::vector<Cell>> board; // Поле клеток
+
+    GameState currentState; // Текущее состояние игры
+    sf::Clock stateClock; // Таймер для update функции
+    sf::Time DELAY = sf::seconds(0.3f); // Задаём задержку между сменой состояний
+
+    // Нужны списки для хранения данных между различными состояниями
+    std::vector<sf::Vector2i> currentMatches; // Клетки в группах на данный момент
+    std::vector<std::pair<sf::Vector2i, Color>> deletedCellsInfo; // Необходимая инфа об удалённых клетках для генерации бонусов
+    std::vector<std::pair<sf::Vector2i, Cell>> bonusesToActivate; // Список всех созданных бонусов, которые нужно активировать
+    int currentBonusIndex = 0; // Нужен для сохранения текущего для активации бонуса в списке для сотояния ActivatingBonuses
+    
+    
+
+    bool firstIsSwapped; // Флаг при выборе первой клетки для swap
+    sf::Vector2i firstSwapped; // Первая клетка для swap
 
     sf::Font font;
     std::mt19937 rng;
+
 
     const int COLORBONUS_RADIUS = 3;
     const int BONUS_PROBABILITY = 5; // в процентах
@@ -192,10 +305,6 @@ private:
         }
         // Перемешаем элементы списка
         std::shuffle(availableCells.begin(), availableCells.end(), rng);
-        // for (int i = 0; i < availableCells.size(); i++) {
-        //     int j = randomInRange(0, availableCells.size() - 1);
-        //     std::swap(availableCells[i], availableCells[j]);
-        // }
 
         int paintCount = std::min(2, static_cast<int>(availableCells.size())); // Если как-то получится менее 2 возм. клеток
         // Выбираем первые 2 элемента
@@ -225,11 +334,6 @@ private:
 
         // Перемешаем элементы списка
         std::shuffle(availableCells.begin(), availableCells.end(), rng);
-        // for (int i = 0; i < availableCells.size(); i++) {
-        //     int j = randomInRange(0, availableCells.size() - 1);
-        //     std::swap(availableCells[i], availableCells[j]);
-        // }
-
 
         int destroyCount = std::min(4, static_cast<int>(availableCells.size()));
         // Выбираем первые 4 элемента
@@ -429,7 +533,15 @@ private:
 
     void swapCells(sf::Vector2i p1, sf::Vector2i p2) {
         std::swap(board[p1.y][p1.x], board[p2.y][p2.x]);
-        deleteMatchesAndDropCycle();
+        
+        // Вместо запуска полного цикла найдем совпадения и изменим состояние
+        currentMatches = findGroupCells();
+
+        if (!currentMatches.empty()) {
+            // Если совпадения есть, то переходим в состояние Показать Совпадения
+            currentState = GameState::ShowingMatches;
+            stateClock.restart(); // Перезапускаем таймер
+        }
     }
 };
 
@@ -454,74 +566,12 @@ int main() {
                 }
             }
         }
+        // Обновлем состояние игры
+        game.update();
+
         window.clear(sf::Color::White);
         // Запускаем отрисовку поля
         game.draw(window);
         window.display();        
     }
-
-    // const int HEIGHT = 720;
-    // const int WIDTH = 720;
-    // sf::VideoMode desktop(WIDTH, HEIGHT);
-    // sf::RenderWindow window;
-    // window.create(desktop, "Gems game", sf::Style::Default);
-    // window.setVerticalSyncEnabled(true);
-
-    // sf::CircleShape circl(100.f, 24);
-    // circl.setOrigin(circl.getRadius(), circl.getRadius());
-    // circl.setFillColor(sf::Color(255, 0, 0));
-    // circl.setPosition(720.0f - 100.0f, 100.0f);
-    // std::cout << "circle position x: " << circl.getPosition().x << std::endl;
-    // std::cout << "circle origin x: " << circl.getOrigin().x << std::endl;
-    // std::cout << "circle radius: " << circl.getRadius() << std::endl;
-    
-
-    // bool circl_picked = false;
-    // while (window.isOpen()){
-    //     sf::Event event;
-    //     while (window.pollEvent(event)){
-    //         if (event.type == sf::Event::Closed){
-    //             window.close();
-    //         }
-    //         if (event.type == sf::Event::MouseButtonPressed){
-    //             if (event.mouseButton.button == sf::Mouse::Button::Left) {
-    //                 sf::Vector2f center = circl.getPosition();
-    //                 sf::Vector2f clickedPos(event.mouseButton.x, event.mouseButton.y);
-    //                 sf::Vector2f d = center - clickedPos;
-                    
-    //                 std::cout << "Mouse button pressed" << std::endl;
-    //                 std::cout << "mouse x: " << clickedPos.x << " circle x: " << center.x << std::endl;
-    //                 std::cout << "mouse y: " << clickedPos.y << " circle y: " << center.y << std::endl;
-    //                 if (std::sqrt(d.x * d.x + d.y * d.y) <= circl.getRadius()){
-    //                     circl.setFillColor(sf::Color(200, circl.getFillColor().g, circl.getFillColor().b));
-    //                     circl_picked = true;
-    //                 }
-    //             }
-    //         }
-    //         if (event.type == sf::Event::MouseButtonReleased) {
-    //             if (event.mouseButton.button == sf::Mouse::Left) {
-    //                 if (circl_picked) {
-    //                     circl_picked = false;
-    //                     circl.setFillColor(sf::Color::Red);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     window.clear(sf::Color::Black);
-        
-
-    //     /* 
-    //     sf::Texture texture;
-    //     if (!texture.loadFromFile("image.png"))
-    //     {
-    //         // error...
-    //     }
-    //     sf::Sprite sprite;
-    //     sprite.setTexture(texture);
-    //     window.draw(sprite)
-    //     */
-    //     window.draw(circl);
-    //     window.display();
-    // }
-    // return 0;
 }
