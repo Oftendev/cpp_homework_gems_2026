@@ -31,9 +31,3 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/arial.ttf"
     COPYONLY
 )
-# Копируем ресурсы
-# add_custom_command(TARGET MyGemsProject PRE_BUILD
-#     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-#         ${CMAKE_CURRENT_SOURCE_DIR}/arial.ttf
-#         ${CMAKE_CURRENT_BINARY_DIR}/arial.ttf
-# )
