@@ -87,7 +87,7 @@ public:
                 }
                 rect.setFillColor(fillColor);
                 rect.setOutlineColor(sf::Color::Black);
-                rect.setOutlineThickness(-1); // Граница внутрь
+                rect.setOutlineThickness(-5); // Граница внутрь
                 window.draw(rect);
                 // Если первая выбранная клетка есть, и это - она, то затемнить
                 if (firstIsSwapped && firstSwapped.x == x && firstSwapped.y == y) {
@@ -101,19 +101,57 @@ public:
                 if (board[y][x].type == CellType::ColorBonus || board[y][x].type == CellType::DestroyBonus) {
                     sf::Text text;
                     text.setFont(font);
-                    text.setCharacterSize(cellSize / 2);
+                    text.setCharacterSize(cellSize / 2.0f);
                     text.setString(board[y][x].type == CellType::ColorBonus ? "C" : "B");
                     text.setFillColor(sf::Color::Black);
-                    text.setPosition(x * cellSize + cellSize / 4, y * cellSize + cellSize / 4);
+                    sf::FloatRect textBounds = text.getLocalBounds();
+                    // Ставим origin по центру boundingBox
+                    text.setOrigin(textBounds.left + textBounds.width/2, textBounds.top + textBounds.height/2);                 
+                    
+                    text.setPosition(x * cellSize + cellSize / 2, y * cellSize + cellSize / 2);
                     window.draw(text);                        
                 }
             }
         }
+        // Отрисовка паузы
+        if (isPaused) {
+            sf::RectangleShape pauseRect(sf::Vector2f(width * cellSize, height * cellSize));
+            pauseRect.setPosition(0.0f, 0.0f);
+            pauseRect.setFillColor(sf::Color(0, 0, 0, 127));
+            window.draw(pauseRect);
+
+            sf::Text pauseText;
+            pauseText.setFont(font);
+            pauseText.setCharacterSize(cellSize/2.0f);
+            pauseText.setString("Paused");
+            pauseText.setFillColor(sf::Color::White);
+
+            sf::FloatRect textBounds = pauseText.getLocalBounds();
+            // Ставим origin по центру boundingBox
+            pauseText.setOrigin(textBounds.left + textBounds.width/2, textBounds.top + textBounds.height/2);
+            // Устанавливаем по центру
+            pauseText.setPosition((width * cellSize) / 2.0f, (height * cellSize) / 2.0f);
+            
+            window.draw(pauseText);
+        }
+    }
+
+    // Метод для переключения паузы
+    void switchPause() {
+        isPaused = !isPaused;
+        
+        if (!isPaused) {
+            stateClock.restart(); // Чтобы после паузы время сбросилось
+        }
+        return;
     }
 
     void handleClick(int posX, int posY) {
         // Блокируем действия, если состояние не waitingForInput
         if (currentState != GameState::WaitingForInput) return;
+
+        // Блокируем действия, если игра на паузе
+        if (isPaused) return;
 
         // Делим нацело для определения нажатой клетки
         int x = posX / cellSize;
@@ -149,6 +187,9 @@ public:
     void update() {
         // Игрок ещё не походил - ничего не обновляем
         if (currentState == GameState::WaitingForInput) return;
+
+        // Игра на паузе - также ничего не делаем
+        if (isPaused) return;
 
         // Время таймера ещё не >= DELAY, выходим
         if (stateClock.getElapsedTime() < DELAY) return;
@@ -254,7 +295,7 @@ private:
     std::vector<std::pair<sf::Vector2i, Cell>> bonusesToActivate; // Список всех созданных бонусов, которые нужно активировать
     int currentBonusIndex = 0; // Нужен для сохранения текущего для активации бонуса в списке для сотояния ActivatingBonuses
     
-    
+    bool isPaused = false; // Перемеенна для паузы
 
     bool firstIsSwapped; // Флаг при выборе первой клетки для swap
     sf::Vector2i firstSwapped; // Первая клетка для swap
@@ -548,7 +589,7 @@ private:
 int main() {
     const int WIDTH = 8;
     const int HEIGHT = 8;
-    const int CELL_SIZE = 80;
+    const int CELL_SIZE = 60;
     
     sf::RenderWindow window(sf::VideoMode(WIDTH * CELL_SIZE, HEIGHT * CELL_SIZE), "GEMS project");
     window.setFramerateLimit(60);
@@ -558,13 +599,32 @@ int main() {
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed)
-                window.close();
-            else if (event.type == sf::Event::MouseButtonPressed) {
-                if (event.mouseButton.button == sf::Mouse::Left) {
-                    game.handleClick(event.mouseButton.x, event.mouseButton.y);
+            switch (event.type) {
+                case sf::Event::Closed: {
+                    window.close();
+                    break;
                 }
+                case sf::Event::MouseButtonPressed: {
+                    if (event.mouseButton.button == sf::Mouse::Left) {
+                        game.handleClick(event.mouseButton.x, event.mouseButton.y);
+                    }
+                    break;
+                }
+                case sf::Event::KeyPressed: {
+                    if (event.key.code == sf::Keyboard::Space) {
+                        game.switchPause();
+                    }
+                    break;
+                }
+                default: break;
             }
+            // if (event.type == sf::Event::Closed)
+            //     window.close();
+            // else if (event.type == sf::Event::MouseButtonPressed) {
+            //     if (event.mouseButton.button == sf::Mouse::Left) {
+            //         game.handleClick(event.mouseButton.x, event.mouseButton.y);
+            //     }
+            // }
         }
         // Обновлем состояние игры
         game.update();
