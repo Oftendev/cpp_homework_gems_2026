@@ -1,6 +1,7 @@
 #include "GemsGame.hpp"
 
 #include <algorithm>
+#include <queue>
 
 #include "CellFactory.hpp"
 #include "ColorBonusCell.hpp"
@@ -86,67 +87,59 @@ void GemsGame::swapCells(sf::Vector2i p1, sf::Vector2i p2) {
     }
 }
 
+// Ищем связанные компоненты из клеток одинакового цвета 3 и больше
 std::vector<sf::Vector2i> GemsGame::findGroupCells() {
-    std::vector<sf::Vector2i> groupCells;  // Все клетки, образующие группы
-    std::vector<std::vector<bool>> grouped(height,
+    std::vector<sf::Vector2i> groupCells;
+    std::vector<std::vector<bool>> visited(height,
                                            std::vector<bool>(width, false));
 
-    // // Проверяем группы по горизонтали
-    for (int y = 0; y < height; y++) {
-        int len = 1;
-        for (int x = 1; x < width; x++) {
-            if (board[y][x]->type == CellType::Normal &&
-                board[y][x - 1]->type == CellType::Normal &&
-                board[y][x]->color == board[y][x - 1]->color) {
-                // Уведичивем длину собираемой группы на 1
-                len++;
-            } else {
-                // Собираемая группа закончилась
-                if (len >= 3) {
-                    // Группа длинее 3 собралась
-                    for (int i = x - len; i < x; i++) {
-                        grouped[y][i] = true;
-                    }
-                }
-                len = 1;
-            }
-        }
-        // Дошли до конца. Если группа длиннее 3 ещё собирается, записываем её.
-        if (len >= 3) {
-            for (int i = width - len; i < width; i++) {
-                grouped[y][i] = true;
-            }
-        }
-    }
+    // Направления обхода - (x_d, y_d)
+    const int x_d[4] = {1, -1, 0, 0};
+    const int y_d[4] = {0, 0, 1, -1};
 
-    // // И аналогично группы по вертикали
-    for (int x = 0; x < width; x++) {
-        int len = 1;
-        for (int y = 1; y < height; y++) {
-            if (board[y][x]->type == CellType::Normal &&
-                board[y - 1][x]->type == CellType::Normal &&
-                board[y][x]->color == board[y - 1][x]->color) {
-                len++;
-            } else {
-                if (len >= 3) {
-                    for (int i = y - len; i < y; i++) {
-                        grouped[i][x] = true;
-                    }
-                }
-                len = 1;
-            }
-        }
-        if (len >= 3) {
-            for (int i = height - len; i < height; i++) {
-                grouped[i][x] = true;
-            }
-        }
-    }
-    // Проходимся циклом по всем помеченным клеткам
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            if (grouped[y][x]) {
-                groupCells.push_back({x, y});
+            // Ищем только непосещённые нормальные клетки
+            if (!visited[y][x] && board[y][x]->type == CellType::Normal) {
+                Color currentColor = board[y][x]->color;
+                std::vector<sf::Vector2i> component;
+                std::queue<sf::Vector2i> q;  // Очередб для BFS
+                // Начинаем с левой верхней клетки
+                q.push({x, y});
+                visited[y][x] = true;
+
+                while (!q.empty()) {
+                    // Извлекаем клетку из очереди
+                    sf::Vector2i cur = q.front();
+                    q.pop();
+                    component.push_back(cur);
+
+                    for (int dir = 0; dir < 4; dir++) {
+                        int neighbor_x = cur.x + x_d[dir];
+                        int neighbor_y = cur.y + y_d[dir];
+                        // Проверяем соседние клетки (neighbor_x, neighbor_y):
+                        if (neighbor_x >= 0 && neighbor_x < width &&
+                            neighbor_y >= 0 && neighbor_y < height) {
+                            // Проверяем границы
+                            if (!visited[neighbor_y][neighbor_x]) {
+                                // Проверяем непосещённые клетки
+                                if (board[neighbor_y][neighbor_x]->type == CellType::Normal &&
+                                    board[neighbor_y][neighbor_x]->color == currentColor) {
+                                    // Проверяем, что тип и цвет совпадают
+                                    visited[neighbor_y][neighbor_x] = true;
+                                    q.push({neighbor_x, neighbor_y});
+                                    // Добаввили вершину в очередь
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Если компонента достаточно большая, добавляем её в результат
+                if (component.size() >= 3) {
+                    groupCells.insert(groupCells.end(), component.begin(),
+                                      component.end());
+                }
             }
         }
     }
