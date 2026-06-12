@@ -77,6 +77,12 @@ void GemsGame::swapCells(sf::Vector2i p1, sf::Vector2i p2) {
         // Если совпадения есть, то переходим в состояние Показать Совпадения
         currentState = GameState::ShowingMatches;
         stateClock.restart();  // Перезапускаем таймер
+    } else {
+        // Совпадений нет - возвращаем клетки обратно
+        std::swap(board[p1.y][p1.x], board[p2.y][p2.x]);
+        // Очищаем список совпадений
+        currentMatches.clear();
+        // Состояние остаётся WaitingForInput
     }
 }
 
