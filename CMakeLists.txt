@@ -17,7 +17,20 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(sfml)
 
-add_executable(${PROJECT_NAME} main.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+set(SOURCES
+    src/RandomGenerator.cpp
+    src/Cell.cpp
+    src/CellFactory.cpp
+    src/ColorBonusCell.cpp
+    src/DestroyBonusCell.cpp
+    src/GemsGame.cpp
+    src/GameRenderer.cpp
+    main.cpp
+)
+
+add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     sfml-graphics
