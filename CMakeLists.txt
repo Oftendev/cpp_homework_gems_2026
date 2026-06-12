@@ -27,6 +27,9 @@ set(SOURCES
     src/DestroyBonusCell.cpp
     src/GemsGame.cpp
     src/GameRenderer.cpp
+    src/BonusManager.cpp
+    src/FallHandler.cpp
+    src/GroupFinder.cpp
     main.cpp
 )
 

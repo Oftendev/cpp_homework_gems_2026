@@ -73,7 +73,7 @@ void GemsGame::swapCells(sf::Vector2i p1, sf::Vector2i p2) {
     std::swap(board[p1.y][p1.x], board[p2.y][p2.x]);
 
     // Вместо запуска полного цикла найдем совпадения и изменим состояние
-    currentMatches = findGroupCells();
+    currentMatches = groupFinder.findGroupCells(board, width, height);
     if (!currentMatches.empty()) {
         // Если совпадения есть, то переходим в состояние Показать Совпадения
         currentState = GameState::ShowingMatches;
@@ -85,133 +85,6 @@ void GemsGame::swapCells(sf::Vector2i p1, sf::Vector2i p2) {
         currentMatches.clear();
         // Состояние остаётся WaitingForInput
     }
-}
-
-// Ищем связанные компоненты из клеток одинакового цвета 3 и больше
-std::vector<sf::Vector2i> GemsGame::findGroupCells() {
-    std::vector<sf::Vector2i> groupCells;
-    std::vector<std::vector<bool>> visited(height,
-                                           std::vector<bool>(width, false));
-
-    // Направления обхода - (x_d, y_d)
-    const int x_d[4] = {1, -1, 0, 0};
-    const int y_d[4] = {0, 0, 1, -1};
-
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            // Ищем только непосещённые нормальные клетки
-            if (!visited[y][x] && board[y][x]->type == CellType::Normal) {
-                Color currentColor = board[y][x]->color;
-                std::vector<sf::Vector2i> component;
-                std::queue<sf::Vector2i> q;  // Очередб для BFS
-                // Начинаем с левой верхней клетки
-                q.push({x, y});
-                visited[y][x] = true;
-
-                while (!q.empty()) {
-                    // Извлекаем клетку из очереди
-                    sf::Vector2i cur = q.front();
-                    q.pop();
-                    component.push_back(cur);
-
-                    for (int dir = 0; dir < 4; dir++) {
-                        int neighbor_x = cur.x + x_d[dir];
-                        int neighbor_y = cur.y + y_d[dir];
-                        // Проверяем соседние клетки (neighbor_x, neighbor_y):
-                        if (neighbor_x >= 0 && neighbor_x < width &&
-                            neighbor_y >= 0 && neighbor_y < height) {
-                            // Проверяем границы
-                            if (!visited[neighbor_y][neighbor_x]) {
-                                // Проверяем непосещённые клетки
-                                if (board[neighbor_y][neighbor_x]->type == CellType::Normal &&
-                                    board[neighbor_y][neighbor_x]->color == currentColor) {
-                                    // Проверяем, что тип и цвет совпадают
-                                    visited[neighbor_y][neighbor_x] = true;
-                                    q.push({neighbor_x, neighbor_y});
-                                    // Добаввили вершину в очередь
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Если компонента достаточно большая, добавляем её в результат
-                if (component.size() >= 3) {
-                    groupCells.insert(groupCells.end(), component.begin(),
-                                      component.end());
-                }
-            }
-        }
-    }
-
-    return groupCells;
-}
-
-void GemsGame::fallAndAdd() {
-    for (int x = 0; x < width; x++) {
-        // Будем собирать по новому столбцу
-        std::vector<std::shared_ptr<Cell>> newColumn;
-
-        for (int y = height - 1; y >= 0; y--) {
-            if (!board[y][x]->isEmpty()) {
-                // Кладём в newColumn все клетки в столбце, кроме пустых
-                newColumn.push_back(board[y][x]);
-            }
-        }
-        // В newcolumn докладываем рандомные (не бонусные) ячеёки
-        for (int i = static_cast<int>(newColumn.size()); i < height; i++) {
-            newColumn.push_back(CellFactory::createNormalCell(
-                RandomGenerator::getInstance().randomColor()));
-        }
-        // Теперь копируем из newColunm в столбец board (но надо развернуть)
-        for (int y = 0; y < height; y++) {
-            board[height - y - 1][x] = newColumn[y];
-        }
-    }
-}
-
-void GemsGame::placeBonus(const sf::Vector2i& pos, Color bonusColor) {
-    if (RandomGenerator::getInstance().randomInRange(0, 99) >
-        BONUS_PROBABILITY) {
-        return;
-    }
-
-    std::vector<sf::Vector2i> availableCells;
-    sf::Vector2i destination;
-
-    for (int i = -3; i <= 3; i++) {
-        for (int j = -3; j <= 3; j++) {
-            destination.x = pos.x + i;
-            destination.y = pos.y + j;
-
-            if ((destination.x >= 0 && destination.x < width) &&
-                (destination.y >= 0 && destination.y < height)) {
-                if (board[destination.y][destination.x]->type ==
-                    CellType::Normal) {
-                    availableCells.push_back(destination);
-                }
-            }
-        }
-    }
-
-    if (availableCells.empty()) return;
-
-    std::mt19937& rng = RandomGenerator::getInstance().getRng();
-    std::shuffle(availableCells.begin(), availableCells.end(), rng);
-    sf::Vector2i target = availableCells[0];
-
-    std::shared_ptr<Cell> bonusCell =
-        CellFactory::createRandomBonus(bonusColor);
-    // Сохраняем указатель на объект клетки для его активации
-    bonusesToActivate.push_back({target, bonusCell});
-    board[target.y][target.x] = bonusCell;
-}
-
-void GemsGame::executeBonus(const sf::Vector2i& pos,
-                            std::shared_ptr<Cell> bonus) {
-    if (!bonus || !bonus->isBonus()) return;
-    // Вызываем полиморфный execute, который знает, что делать
-    std::static_pointer_cast<BonusCell>(bonus)->execute(pos, board);
 }
 
 void GemsGame::update() {
@@ -244,7 +117,7 @@ void GemsGame::update() {
         }
         case GameState::FirstFalling: {
             // 2) Клетки "упали" и насыпались новые сверху
-            fallAndAdd();
+            fallHandler.fallAndAdd(board, width, height);
 
             // Переходим к состоянию генерации бонусов
             currentState = GameState::PlacingBonuses;
@@ -255,7 +128,8 @@ void GemsGame::update() {
             // 3) Расставляем на упавшем поле бонусы
             bonusesToActivate.clear();
             for (const auto& [position, color] : deletedCellsInfo) {
-                placeBonus(position, color);
+                BonusManager.placeBonus(position, color, board, width, height,
+                                        bonusesToActivate);
             }
             // Обнуляем индекс для следущего состояния, которое будет по нему
             // ходить
@@ -273,7 +147,7 @@ void GemsGame::update() {
                 // в activateBonuses, но без цикла, т.к. update уже происходит в
                 // цикле отрисовки)
                 auto& [pos, bonus] = bonusesToActivate[currentBonusIndex];
-                executeBonus(pos, bonus);
+                BonusManager.executeBonus(pos, bonus, board, width, height);
                 currentBonusIndex++;  // Переходим к следуюшему бонусу
                 stateClock
                     .restart();  // Перезапускаем таймер для слежующего бонуса
@@ -287,12 +161,12 @@ void GemsGame::update() {
         }
         case GameState::SecondFalling: {
             // 5) Второе падение (после бонусов)
-            fallAndAdd();
+            fallHandler.fallAndAdd(board, width, height);
 
             // ОТсюда можно выйти либо к состоянию ShowingMatches (если группы
             // ещё есть), либо к WaitingForInput (если всё ок и можно делать
             // следующий ход)
-            currentMatches = findGroupCells();
+            currentMatches = groupFinder.findGroupCells(board, width, height);
             if (!currentMatches.empty()) {
                 // Нашли новые клетки в группах - запускаем цикл заново
                 currentState = GameState::ShowingMatches;
@@ -312,7 +186,8 @@ bool GemsGame::deleteMatchesAndDropCycle() {
     bool has_changed = false;
     while (true) {
         // 1) Находим группы клеток
-        std::vector<sf::Vector2i> matches = findGroupCells();
+        std::vector<sf::Vector2i> matches =
+            groupFinder.findGroupCells(board, width, height);
         if (matches.empty()) break;  // Не нашли групп
         has_changed = true;
         // 2) Сохраняем эти клетки с цветами в списке (список пар (вектор,
@@ -323,21 +198,22 @@ bool GemsGame::deleteMatchesAndDropCycle() {
             board[p.y][p.x] = CellFactory::createEmptyCell();
         }
         // 3) Первое падение (бонусов пока нет)
-        fallAndAdd();
+        fallHandler.fallAndAdd(board, width, height);
         // 4) Генерируем бонусы для каждой позиции удалённой клетки (но не
         // активируем) (т.к. клетки до этого уже упали, то пустых мест не будет)
         // std::vector<std::pair<sf::Vector2i, std::shared_ptr<Cell>>>
         // tempBonusesToActivate;
         for (const auto& [position, color] : deleted) {
-            placeBonus(position, color);
+            BonusManager.placeBonus(position, color, board, width, height,
+                                    bonusesToActivate);
         }
 
         // 5) Активируем бонусы по списку
         for (const auto& [pos, bonus] : bonusesToActivate) {
-            executeBonus(pos, bonus);
+            BonusManager.executeBonus(pos, bonus, board, width, height);
         }
         // 6) Второе падение (уже после активации бонусов)
-        fallAndAdd();
+        fallHandler.fallAndAdd(board, width, height);
         // 7) Цикл повторяется (т.к. могли появиться новые группы)
         bonusesToActivate.clear();  // Очищаем список бонусов
     }

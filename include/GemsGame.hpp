@@ -3,7 +3,10 @@
 #include <memory>
 #include <vector>
 
+#include "BonusManager.hpp"
 #include "Cell.hpp"
+#include "FallHandler.hpp"
+#include "GroupFinder.hpp"
 
 class GemsGame {
    public:
@@ -25,14 +28,14 @@ class GemsGame {
 
    private:
     enum class GameState {
-        WaitingForInput,  // Игрок может сделать ход
-        ShowingMatches,  // Нашли группы, показываем их, как уделённые ячейки
-                         // (серые)
+        WaitingForInput,    // Игрок может сделать ход
+        ShowingMatches,     // Нашли группы, показываем их, как уделённые ячейки
+                            // (серые)
         FirstFalling,       // Клетки после первого падения
         PlacingBonuses,     // Показываем поле с расставленными бонусами
         ActivatingBonuses,  // Активируем бонусы (по одному)
-        SecondFalling  // Клетки после второго падения (все бонусы уже
-                       // активировались)
+        SecondFalling       // Клетки после второго падения (все бонусы уже
+                            // активировались)
     };
     int width, height;  // Количество клеток по горизонтали и вертикали
     int cellSize;
@@ -42,6 +45,11 @@ class GemsGame {
     sf::Clock stateClock;    // Таймер для update функции
     static constexpr float DELAY_SECONDS =
         0.3f;  // Задаём задержку между сменой состояний
+
+    // Компоненты GemsGame
+    GroupFinder groupFinder;
+    FallHandler fallHandler;
+    BonusManager BonusManager;
 
     // Нужны списки для хранения данных между различными состояниями
     std::vector<sf::Vector2i>
@@ -60,28 +68,14 @@ class GemsGame {
 
     bool firstIsSwapped = false;  // Флаг при выборе первой клетки для swap
     sf::Vector2i firstSwapped;    // Первая клетка для swap
-    static constexpr int BONUS_PROBABILITY = 5;
-
-    // Всомогательные методы
-    // Выполение бонуса
-    void executeBonus(const sf::Vector2i& pos, std::shared_ptr<Cell> bonus);
-    // Генерация бонуса (pos - позиция очищенной клетки)
-    void placeBonus(const sf::Vector2i& pos, Color bonusColor);
-    // Поиск всех клеток из групп из трёх и более одинаковых цветов (в ряд или в
-    // столбец)
-    std::vector<sf::Vector2i> findGroupCells();
-    // "Схлопывание" пустых клеток, спуск непустых вниз и заполнение новыми
-    // сверху
-    void fallAndAdd();
-    /*
-    Цикличный процесс:  поиск клеток из групп длиннее 3 ->
-                        пометка этих клеток на удаление ->
-                        спуск клеток в board и добавление новых ->
-                        генерация для каждой такой клетки бонуса ->
-                        выполнение каждого бонуса ->
-                        спуск клеток в board и добавление новых
-    И так, пока больше не будет появляться групп, длиннее 3
-    */
+    // Цикличный процесс:  поиск клеток из групп длиннее 3 ->
+    //                     пометка этих клеток на удаление ->
+    //                     спуск клеток в board и добавление новых ->
+    //                     генерация для каждой такой клетки бонуса ->
+    //                     выполнение каждого бонуса ->
+    //                     спуск клеток в board и добавление новых
+    // И так, пока больше не будет появляться групп, длиннее 3
+    // */
     bool deleteMatchesAndDropCycle();
     void swapCells(sf::Vector2i p1, sf::Vector2i p2);
 };
